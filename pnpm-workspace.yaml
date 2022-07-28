@@ -1,0 +1,3 @@
+# 设置根目录 工作区间
+packages:
+  - 'packages/*'
