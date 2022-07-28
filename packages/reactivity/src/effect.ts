@@ -8,7 +8,7 @@ const targetMap = new WeakMap();
 class ReactiveEffect {
   // effect的parent effect
   public parent: ReactiveEffect | undefined = undefined;
-  public deps: ReactiveEffect[] = [];
+  public deps = [];
   // 是否激活状态
   public active = true;
   constructor(public fn: Function, public schedule?: Function) {}
@@ -23,6 +23,8 @@ class ReactiveEffect {
       // 之前运行的effect为父节点，确认嵌套执行的effect能正确执行
       this.parent = activeEffect;
       activeEffect = this;
+      // 依赖收集之前需要将之前收集的依赖清空掉
+      cleanupEffect(this);
       return this.fn();
     } finally {
       // activeEffect = undefined;
@@ -30,13 +32,30 @@ class ReactiveEffect {
       this.parent = undefined;
     }
   }
+  stop() {
+    if (this.active) {
+      this.active = false;
+    }
+    cleanupEffect(this);
+  }
 }
-
+// 清理依赖
+function cleanupEffect(effect: ReactiveEffect) {
+  const { deps } = effect;
+  for (let i = 0; i < deps.length; i++) {
+    deps[i].delete(effect);
+  }
+  effect.deps.length = 0;
+}
 // fn可以根据状态变化之后重新执行，effect可以嵌套
 export function effect(fn: Function) {
   const _effect = new ReactiveEffect(fn);
   //默认先执行一次
   _effect.run();
+  let runner;
+  runner = _effect.run.bind(_effect);
+  runner.effect = _effect;
+  return runner;
 }
 /**
  * 依赖收集
@@ -78,6 +97,7 @@ export function trigger(
   const depsMap = targetMap.get(target); // {obj: {a:Set()}}
   if (!depsMap) return; // 修改的属性  没有依赖任何effect 直接return
   const deps = [];
+  if (!depsMap.get(key)) return;
   deps.push(depsMap.get(key));
   let effects: Array<ReactiveEffect> = [];
   for (const dep of deps) {
